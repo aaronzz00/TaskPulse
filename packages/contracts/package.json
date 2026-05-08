@@ -1,0 +1,14 @@
+{
+  "name": "@taskpulse/contracts",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "tsx --test \"src/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+}

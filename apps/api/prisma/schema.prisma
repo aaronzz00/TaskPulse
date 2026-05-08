@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  startDate   DateTime
+  endDate     DateTime
+  status      String   @default("draft")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tasks     Task[]
+  insights  AIInsight[]
+}
+
+model Task {
+  id             String   @id @default(cuid())
+  projectId      String
+  parentId       String?
+  title          String
+  description    String   @default("")
+  status         String   @default("todo")
+  assigneeId     String?
+  plannedStart   DateTime
+  plannedEnd     DateTime
+  actualStart    DateTime?
+  actualEnd      DateTime?
+  estimatedHours Float    @default(0)
+  actualHours    Float    @default(0)
+  priority       String   @default("medium")
+  progress       Int      @default(0)
+  aiConfidence   Float?
+  aiReasoning    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent       Task?        @relation("TaskHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Task[]       @relation("TaskHierarchy")
+  dependencies Dependency[] @relation("DependencySource")
+  dependents   Dependency[] @relation("DependencyTarget")
+  insights     AIInsight[]
+}
+
+model Dependency {
+  id           String  @id @default(cuid())
+  sourceTaskId String
+  targetTaskId String
+  type         String  @default("FS")
+  lag          Int     @default(0)
+  source       String  @default("manual")
+  createdAt    DateTime @default(now())
+
+  sourceTask Task @relation("DependencySource", fields: [sourceTaskId], references: [id], onDelete: Cascade)
+  targetTask Task @relation("DependencyTarget", fields: [targetTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceTaskId, targetTaskId])
+}
+
+model AIInsight {
+  id          String   @id @default(cuid())
+  projectId   String
+  taskId      String?
+  type        String
+  severity    String   @default("info")
+  content     String
+  reasoning   String
+  actionTaken String?
+  createdAt   DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task    Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  avatar    String?
+  role      String   @default("member")
+  capacity  Int      @default(40)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
