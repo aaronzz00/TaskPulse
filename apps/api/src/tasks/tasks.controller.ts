@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestj
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { BatchUpdateTaskDto } from './dto/batch-update-task.dto';
 
 @Controller('tasks')
 export class TasksController {
@@ -20,6 +21,11 @@ export class TasksController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.tasksService.findOne(id);
+  }
+
+  @Patch('batch')
+  batchUpdate(@Body() batchUpdateTaskDto: BatchUpdateTaskDto) {
+    return this.tasksService.batchUpdate(batchUpdateTaskDto);
   }
 
   @Patch(':id')

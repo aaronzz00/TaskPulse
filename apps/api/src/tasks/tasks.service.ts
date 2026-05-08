@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../common/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { BatchUpdateTaskDto, BatchTaskUpdateItemDto } from './dto/batch-update-task.dto';
 import { SchedulingService } from './scheduling.service';
 
 @Injectable()
@@ -82,25 +83,25 @@ export class TasksService {
   }
 
   async update(id: string, updateTaskDto: UpdateTaskDto) {
-    const data: any = { ...updateTaskDto };
-    
-    if (updateTaskDto.plannedStart) {
-      data.plannedStart = new Date(updateTaskDto.plannedStart);
-    }
-    if (updateTaskDto.plannedEnd) {
-      data.plannedEnd = new Date(updateTaskDto.plannedEnd);
-    }
-    if (updateTaskDto.actualStart) {
-      data.actualStart = new Date(updateTaskDto.actualStart);
-    }
-    if (updateTaskDto.actualEnd) {
-      data.actualEnd = new Date(updateTaskDto.actualEnd);
-    }
+    const data = this.toTaskUpdateData(updateTaskDto);
 
     return this.prisma.task.update({
       where: { id },
       data,
     });
+  }
+
+  async batchUpdate(batchUpdateTaskDto: BatchUpdateTaskDto) {
+    const operations = batchUpdateTaskDto.tasks.map((taskUpdate) => {
+      const { id, ...updateTaskDto } = taskUpdate;
+
+      return this.prisma.task.update({
+        where: { id },
+        data: this.toTaskUpdateData(updateTaskDto),
+      });
+    });
+
+    return this.prisma.$transaction(operations);
   }
 
   async remove(id: string) {
@@ -139,5 +140,24 @@ export class TasksService {
     }
 
     return this.schedulingService.calculateCriticalPath(taskNodes);
+  }
+
+  private toTaskUpdateData(updateTaskDto: UpdateTaskDto | Omit<BatchTaskUpdateItemDto, 'id'>) {
+    const data: any = { ...updateTaskDto };
+
+    if (updateTaskDto.plannedStart) {
+      data.plannedStart = new Date(updateTaskDto.plannedStart);
+    }
+    if (updateTaskDto.plannedEnd) {
+      data.plannedEnd = new Date(updateTaskDto.plannedEnd);
+    }
+    if (updateTaskDto.actualStart) {
+      data.actualStart = new Date(updateTaskDto.actualStart);
+    }
+    if (updateTaskDto.actualEnd) {
+      data.actualEnd = new Date(updateTaskDto.actualEnd);
+    }
+
+    return data;
   }
 }

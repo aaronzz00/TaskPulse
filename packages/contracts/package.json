@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "tsx --test \"src/**/*.test.ts\""
+    "test": "find src \\( -name '*.test.ts' -o -name '*.spec.ts' \\) -print0 | xargs -0 tsx --test"
   },
   "devDependencies": {
     "typescript": "^5.3.0"

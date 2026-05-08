@@ -16,7 +16,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "seed": "ts-node scripts/seed-demo-data.ts",
-    "test": "tsx --test \"src/**/*.test.ts\""
+    "test": "find src \\( -name '*.test.ts' -o -name '*.spec.ts' \\) -print0 | xargs -0 tsx --test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.12.0",
