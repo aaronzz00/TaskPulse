@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary-50: #eff6ff;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  
+  --color-ai-light: #f3e8ff;
+  --color-ai-default: #a855f7;
+  --color-ai-dark: #7e22ce;
+  
+  --color-status-todo: #9ca3af;
+  --color-status-in_progress: #3b82f6;
+  --color-status-done: #22c55e;
+  --color-status-risk: #ef4444;
+  --color-status-warning: #f59e0b;
+}
+
+@utility bg-ai-gradient {
+  background-image: linear-gradient(to right, #8b5cf6, #d946ef);
+}
