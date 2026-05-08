@@ -1,52 +1,108 @@
-import { Task, Project } from '@/types';
+import {
+  mapBackendProjectToWorkspaceProject,
+  mapBackendTaskToWorkspaceTask,
+  type BackendProject,
+  type BackendTask,
+  type WorkspaceProject,
+  type WorkspaceTask,
+} from '@taskpulse/contracts';
 
-// Simulate network latency for backend requests
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+type TaskUpdatePayload = Partial<Omit<WorkspaceTask, 'dependencies'>>;
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 export const api = {
-  // Task Endpoints
-  fetchTasks: async (projectId: string): Promise<Task[]> => {
-    await delay(600); // Mock network loading
-    return [
-      { id: '1', title: 'Phase 1: Research & Planning', status: 'done', priority: 'medium', plannedStart: '2026-05-01', plannedEnd: '2026-05-03', progress: 100 },
-      { id: '2', title: 'Frontend Scaffold & UI', status: 'in_progress', priority: 'critical', plannedStart: '2026-05-04', plannedEnd: '2026-05-10', progress: 40 },
-      { id: '2-1', title: 'Design System Set Up', status: 'done', priority: 'medium', plannedStart: '2026-05-04', plannedEnd: '2026-05-05', progress: 100, parentId: '2' },
-      { id: '2-2', title: 'Core Layout Components', status: 'in_progress', priority: 'high', plannedStart: '2026-05-06', plannedEnd: '2026-05-08', progress: 50, parentId: '2' },
-      { id: '2-3', title: 'State Management', status: 'todo', priority: 'high', plannedStart: '2026-05-08', plannedEnd: '2026-05-10', progress: 0, parentId: '2' },
-      { id: '3', title: 'Gantt Chart Interactive Component', status: 'todo', priority: 'high', plannedStart: '2026-05-10', plannedEnd: '2026-05-15', progress: 0, dependencies: [{ taskId: '2', type: 'FS', lag: 0 }] },
-      { id: '4', title: 'Backend API Integration', status: 'todo', priority: 'high', plannedStart: '2026-05-12', plannedEnd: '2026-05-20', progress: 0 },
-    ];
+  fetchProjects: async (): Promise<BackendProject[]> => {
+    return request<BackendProject[]>('/projects');
   },
 
-  createTask: async (task: Omit<Task, 'id'>, projectId: string): Promise<Task> => {
-    await delay(400);
-    return { ...task, id: Math.random().toString(36).substr(2, 9) };
+  fetchProjectOverview: async (projectId: string, tasks: WorkspaceTask[]): Promise<WorkspaceProject> => {
+    const project = await request<BackendProject>(`/projects/${projectId}`);
+    return mapBackendProjectToWorkspaceProject(project, tasks);
   },
 
-  updateTask: async (id: string, updates: Partial<Task>): Promise<Task> => {
-    await delay(400);
-    // In a real app, this would return the updated task from DB
-    return { id, ...updates } as Task; 
+  fetchTasks: async (projectId: string): Promise<WorkspaceTask[]> => {
+    const tasks = await request<BackendTask[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`);
+    return tasks.map(mapBackendTaskToWorkspaceTask);
+  },
+
+  createTask: async (task: Omit<WorkspaceTask, 'id'>, projectId: string): Promise<WorkspaceTask> => {
+    const created = await request<BackendTask>('/tasks', {
+      method: 'POST',
+      body: JSON.stringify(toCreateTaskPayload(task, projectId)),
+    });
+
+    return mapBackendTaskToWorkspaceTask(created);
+  },
+
+  updateTask: async (id: string, updates: Partial<WorkspaceTask>): Promise<WorkspaceTask> => {
+    const updated = await request<BackendTask>(`/tasks/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(toUpdateTaskPayload(updates)),
+    });
+
+    return mapBackendTaskToWorkspaceTask(updated);
+  },
+
+  batchUpdateTasks: async (updates: Array<TaskUpdatePayload & { id: string }>): Promise<WorkspaceTask[]> => {
+    const updated = await request<BackendTask[]>('/tasks/batch', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        tasks: updates.map(({ id, ...taskUpdates }) => ({
+          id,
+          ...toUpdateTaskPayload(taskUpdates),
+        })),
+      }),
+    });
+
+    return updated.map(mapBackendTaskToWorkspaceTask);
   },
 
   deleteTask: async (id: string): Promise<boolean> => {
-    await delay(400);
+    await request(`/tasks/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+
     return true;
   },
-
-  // Project Endpoints
-  fetchProjectOverview: async (projectId: string): Promise<Project> => {
-    await delay(500);
-    return {
-      id: projectId,
-      name: 'E-commerce Rebrand 2024',
-      release_status: 'On Track',
-      requirement_coverage: 85,
-      risk_coverage: 92,
-      validation_coverage: 78,
-      open_issues: 12,
-      pending_reviews: 4,
-      pending_approvals: 2,
-    };
-  }
 };
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...init.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => response.statusText);
+    throw new Error(message || `TaskPulse API request failed with ${response.status}`);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json() as Promise<T>;
+}
+
+function toCreateTaskPayload(task: Omit<WorkspaceTask, 'id'>, projectId: string) {
+  return {
+    projectId,
+    parentId: task.parentId,
+    title: task.title,
+    description: '',
+    status: task.status,
+    priority: task.priority,
+    plannedStart: task.plannedStart,
+    plannedEnd: task.plannedEnd,
+    progress: task.progress,
+  };
+}
+
+function toUpdateTaskPayload(updates: Partial<WorkspaceTask>): TaskUpdatePayload {
+  const { dependencies: _dependencies, ...taskUpdates } = updates;
+  return taskUpdates;
+}

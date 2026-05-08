@@ -30,22 +30,27 @@ export const useStore = create<AppState>((set, get) => ({
   project: null,
   isLoading: false,
   error: null,
-  currentProjectId: 'proj_1',
+  currentProjectId: null,
   isAiSidebarOpen: true,
   viewMode: 'day',
   selectedTaskId: null,
   
   fetchData: async () => {
     const { currentProjectId } = get();
-    if (!currentProjectId) return;
-    
+
     set({ isLoading: true, error: null });
     try {
-      const [tasks, project] = await Promise.all([
-        api.fetchTasks(currentProjectId),
-        api.fetchProjectOverview(currentProjectId)
-      ]);
-      set({ tasks, project, isLoading: false });
+      const projects = await api.fetchProjects();
+      const selectedProject = projects.find(project => project.id === currentProjectId) ?? projects[0];
+
+      if (!selectedProject) {
+        set({ tasks: [], project: null, currentProjectId: null, isLoading: false });
+        return;
+      }
+
+      const tasks = await api.fetchTasks(selectedProject.id);
+      const project = await api.fetchProjectOverview(selectedProject.id, tasks);
+      set({ tasks, project, currentProjectId: selectedProject.id, isLoading: false });
     } catch (err) {
       set({ error: err instanceof Error ? err.message : 'Failed to fetch data', isLoading: false });
     }
@@ -59,8 +64,7 @@ export const useStore = create<AppState>((set, get) => ({
       const newTask = await api.createTask(taskData, currentProjectId);
       set({ tasks: [...tasks, newTask] });
     } catch (err) {
-      console.error('Failed to create task:', err);
-      // Handle error notification here if needed
+      set({ error: err instanceof Error ? err.message : 'Failed to create task' });
     }
   },
 
@@ -72,8 +76,7 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await api.updateTask(id, { progress });
     } catch (err) {
-      // Revert on failure (simplified)
-      console.error('Failed to update progress:', err);
+      set({ tasks, error: err instanceof Error ? err.message : 'Failed to update progress' });
     }
   },
 
@@ -183,10 +186,18 @@ export const useStore = create<AppState>((set, get) => ({
     set({ tasks: updatedTasks });
 
     try {
-      await api.updateTask(id, updates);
-      // Note: In a real app we might want to sync all updated tasks to backend here
+      const dirtyTasks = updatedTasks.filter((task) => {
+        const original = tasks.find((candidate) => candidate.id === task.id);
+        return original && hasPersistedTaskChanges(original, task);
+      });
+
+      if (dirtyTasks.length > 1) {
+        await api.batchUpdateTasks(dirtyTasks.map(toTaskUpdatePayload));
+      } else {
+        await api.updateTask(id, updates);
+      }
     } catch (err) {
-      console.error('Failed to update task:', err);
+      set({ tasks, error: err instanceof Error ? err.message : 'Failed to update task' });
     }
   },
 
@@ -198,7 +209,7 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await api.deleteTask(id);
     } catch (err) {
-      console.error('Failed to delete task:', err);
+      set({ tasks, error: err instanceof Error ? err.message : 'Failed to delete task' });
     }
   },
 
@@ -206,3 +217,26 @@ export const useStore = create<AppState>((set, get) => ({
   setViewMode: (mode) => set({ viewMode: mode }),
   setSelectedTask: (id) => set({ selectedTaskId: id }),
 }));
+
+function hasPersistedTaskChanges(previous: Task, next: Task) {
+  return previous.title !== next.title
+    || previous.status !== next.status
+    || previous.priority !== next.priority
+    || previous.plannedStart !== next.plannedStart
+    || previous.plannedEnd !== next.plannedEnd
+    || previous.progress !== next.progress
+    || previous.parentId !== next.parentId;
+}
+
+function toTaskUpdatePayload(task: Task) {
+  return {
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    priority: task.priority,
+    plannedStart: task.plannedStart,
+    plannedEnd: task.plannedEnd,
+    progress: task.progress,
+    parentId: task.parentId,
+  };
+}
