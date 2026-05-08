@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import { useStore } from '@/store/useStore';
+import { formatShortDate } from '@/lib/dateLabels';
 
 export const Workspace: React.FC = () => {
   const { tasks, viewMode, setViewMode } = useStore();
@@ -481,12 +482,13 @@ export const Workspace: React.FC = () => {
 
   return (
     <div className="flex flex-1 overflow-hidden relative">
-      <div className="w-[480px] border-r border-slate-200 bg-white flex flex-col shrink-0 z-10">
+      <div className="w-[560px] border-r border-slate-200 bg-white flex flex-col shrink-0 z-10">
         <div className="h-10 flex items-center border-b border-slate-100 bg-slate-50/50">
           <div className="w-10 px-4 shrink-0"></div>
           <div className="flex-1 px-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Tasks</div>
           <div className="w-24 px-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Status</div>
-          <div className="w-24 px-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Dates</div>
+          <div className="w-20 px-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Start</div>
+          <div className="w-20 px-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">End</div>
         </div>
         <div 
           ref={taskListRef}
@@ -619,10 +621,16 @@ export const Workspace: React.FC = () => {
                   </span>
                 </div>
                 <div 
-                  className="w-24 px-2 shrink-0 text-[11px] text-slate-500 font-mono"
+                  className="w-20 px-2 shrink-0 text-[11px] text-slate-500 font-mono"
                   onClick={() => useStore.getState().setSelectedTask(task.id)}
                 >
-                  {task.plannedStart.slice(5)}
+                  {formatShortDate(task.plannedStart)}
+                </div>
+                <div
+                  className="w-20 px-2 shrink-0 text-[11px] text-slate-500 font-mono"
+                  onClick={() => useStore.getState().setSelectedTask(task.id)}
+                >
+                  {formatShortDate(task.plannedEnd)}
                 </div>
               </div>
             );

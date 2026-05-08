@@ -45,10 +45,10 @@ export class TasksService {
 
   async findAll(projectId?: string) {
     const where = projectId ? { projectId } : {};
-    return this.prisma.task.findMany({
+    const tasks = await this.prisma.task.findMany({
       where,
       include: {
-        dependencies: {
+        dependents: {
           select: {
             id: true,
             sourceTaskId: true,
@@ -59,8 +59,13 @@ export class TasksService {
         },
         children: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { id: 'asc' },
     });
+
+    return tasks.map(({ dependents, ...task }) => ({
+      ...task,
+      dependencies: dependents,
+    }));
   }
 
   async findOne(id: string) {
@@ -116,7 +121,7 @@ export class TasksService {
       include: {
         tasks: {
           include: {
-            dependencies: true,
+            dependents: true,
           },
         },
       },
@@ -132,7 +137,7 @@ export class TasksService {
       estimatedHours: task.estimatedHours,
       plannedStart: task.plannedStart,
       plannedEnd: task.plannedEnd,
-      dependencies: task.dependencies.map(d => d.sourceTaskId),
+      dependencies: task.dependents.map(d => d.sourceTaskId),
     }));
 
     if (!this.schedulingService.validateNoCyclicDependencies(taskNodes)) {

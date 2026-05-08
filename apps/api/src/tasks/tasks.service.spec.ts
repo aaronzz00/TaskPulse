@@ -31,3 +31,46 @@ test('batchUpdate applies multiple task updates in one transaction', async () =>
   assert.ok(updates[0].data.plannedEnd instanceof Date);
   assert.equal(updates[1].data.progress, 60);
 });
+
+test('findAll returns dependencies as predecessors for each task', async () => {
+  const prisma = {
+    task: {
+      findMany: async () => [
+        {
+          id: 'task-1',
+          title: 'Predecessor',
+          dependents: [],
+          children: [],
+        },
+        {
+          id: 'task-2',
+          title: 'Successor',
+          dependents: [
+            {
+              id: 'dep-1',
+              sourceTaskId: 'task-1',
+              targetTaskId: 'task-2',
+              type: 'SS',
+              lag: 5,
+            },
+          ],
+          children: [],
+        },
+      ],
+    },
+  };
+  const service = new TasksService(prisma as any, {} as any);
+
+  const tasks = await service.findAll('project-1');
+
+  assert.deepEqual((tasks as any)[1].dependencies, [
+    {
+      id: 'dep-1',
+      sourceTaskId: 'task-1',
+      targetTaskId: 'task-2',
+      type: 'SS',
+      lag: 5,
+    },
+  ]);
+  assert.equal('dependents' in (tasks as any)[1], false);
+});
