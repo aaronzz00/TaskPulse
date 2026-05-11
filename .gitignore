@@ -4,8 +4,15 @@ dist/
 .turbo/
 coverage/
 .DS_Store
+.cache/
+.pnpm-home/
+.pnpm-store/
+.superpowers/
+.local-backups/
 *.log
+*.tsbuildinfo
 .env*
 !.env.example
 apps/api/prisma/dev.db
 apps/api/prisma/dev.db-*
+Whisper_Schedule_*.xlsx

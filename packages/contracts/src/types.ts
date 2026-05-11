@@ -19,6 +19,7 @@ export interface BackendProject {
 
 export interface BackendTask {
   id: string;
+  displayId?: string | null;
   projectId: string;
   parentId: string | null;
   title: string;
@@ -50,6 +51,7 @@ export interface BackendDependency {
 }
 
 export interface WorkspaceTaskDependency {
+  id?: string;
   taskId: string;
   type: DependencyType;
   lag: number;
@@ -57,6 +59,7 @@ export interface WorkspaceTaskDependency {
 
 export interface WorkspaceTask {
   id: string;
+  displayId?: string;
   title: string;
   status: WorkspaceTaskStatus;
   priority: TaskPriority;

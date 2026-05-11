@@ -4,7 +4,7 @@
   "description": "TaskPulse Backend API",
   "author": "",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\"",
@@ -16,7 +16,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "seed": "ts-node scripts/seed-demo-data.ts",
-    "test": "find src \\( -name '*.test.ts' -o -name '*.spec.ts' \\) -print0 | xargs -0 tsx --test"
+    "import:whisper": "tsx scripts/import-whisper-schedule.ts",
+    "verify:local-data-privacy": "tsx scripts/local-data-privacy.ts",
+    "test": "find src scripts \\( -name '*.test.ts' -o -name '*.spec.ts' \\) -print0 | xargs -0 tsx --test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.12.0",

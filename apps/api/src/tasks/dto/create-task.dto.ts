@@ -7,6 +7,10 @@ export class CreateTaskDto {
 
   @IsString()
   @IsOptional()
+  displayId?: string;
+
+  @IsString()
+  @IsOptional()
   parentId?: string;
 
   @IsString()

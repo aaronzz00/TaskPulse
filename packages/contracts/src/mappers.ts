@@ -20,6 +20,7 @@ export function toDateInputValue(value: string | Date): string {
 
 export function mapBackendTaskToWorkspaceTask(task: BackendTask): WorkspaceTask {
   const dependencies = task.dependencies?.map((dependency) => ({
+    id: dependency.id,
     taskId: dependency.sourceTaskId,
     type: dependency.type,
     lag: dependency.lag,
@@ -27,6 +28,7 @@ export function mapBackendTaskToWorkspaceTask(task: BackendTask): WorkspaceTask 
 
   return {
     id: task.id,
+    ...(task.displayId ? { displayId: task.displayId } : {}),
     title: task.title,
     status: mapWorkspaceTaskStatus(task.status),
     priority: task.priority,

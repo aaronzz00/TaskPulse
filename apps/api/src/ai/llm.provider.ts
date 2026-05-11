@@ -3,6 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { LLMProvider } from './dto/create-chat.dto';
+import type { AIProviderKind } from './dto/ai-provider-config.dto';
+
+export type RuntimeAIProviderConfig = {
+  provider: AIProviderKind;
+  baseUrl?: string | null;
+  model: string;
+  apiKey: string;
+};
 
 @Injectable()
 export class LLMProviderService {
@@ -103,6 +111,31 @@ export class LLMProviderService {
       default:
         return this.chatWithOpenAI(message, model);
     }
+  }
+
+  async chatWithConfig(message: string, config: RuntimeAIProviderConfig): Promise<string> {
+    if (config.provider === 'anthropic') {
+      const client = new Anthropic({ apiKey: config.apiKey });
+      const response = await (client as any).messages.create({
+        model: config.model,
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: message }],
+      });
+      const content = response.content[0];
+      return content.type === 'text' ? content.text : '';
+    }
+
+    const client = new OpenAI({
+      apiKey: config.apiKey,
+      baseURL: config.baseUrl || undefined,
+    });
+    const response = await client.chat.completions.create({
+      model: config.model,
+      messages: [{ role: 'user', content: message }],
+      temperature: 0.7,
+    });
+
+    return response.choices[0]?.message?.content || '';
   }
 
   isProviderAvailable(provider: LLMProvider): boolean {

@@ -32,6 +32,62 @@ test('batchUpdate applies multiple task updates in one transaction', async () =>
   assert.equal(updates[1].data.progress, 60);
 });
 
+test('create assigns the next project-scoped display id when omitted', async () => {
+  const createCalls: any[] = [];
+  const prisma = {
+    project: {
+      findUnique: async () => ({ id: 'project-1' }),
+    },
+    task: {
+      findUnique: async () => null,
+      findMany: async () => [{ displayId: 'T-001' }, { displayId: 'T-003' }],
+      create: async (args: any) => {
+        createCalls.push(args);
+        return { id: 'task-new', ...args.data };
+      },
+    },
+  };
+  const service = new TasksService(prisma as any, {} as any);
+
+  const task = await service.create({
+    projectId: 'project-1',
+    title: 'New task',
+    description: '',
+    plannedStart: '2026-05-01',
+    plannedEnd: '2026-05-02',
+  } as any);
+
+  assert.equal((task as any).displayId, 'T-004');
+  assert.equal(createCalls[0].data.displayId, 'T-004');
+});
+
+test('create preserves an explicit display id', async () => {
+  const prisma = {
+    project: {
+      findUnique: async () => ({ id: 'project-1' }),
+    },
+    task: {
+      findUnique: async () => null,
+      findMany: async () => {
+        throw new Error('should not generate a display id');
+      },
+      create: async (args: any) => ({ id: 'task-new', ...args.data }),
+    },
+  };
+  const service = new TasksService(prisma as any, {} as any);
+
+  const task = await service.create({
+    projectId: 'project-1',
+    displayId: 'W-001',
+    title: 'Imported task',
+    description: '',
+    plannedStart: '2026-05-01',
+    plannedEnd: '2026-05-02',
+  } as any);
+
+  assert.equal((task as any).displayId, 'W-001');
+});
+
 test('findAll returns dependencies as predecessors for each task', async () => {
   const prisma = {
     task: {

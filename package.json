@@ -1,6 +1,7 @@
 {
   "name": "taskpulse",
   "private": true,
+  "license": "MIT",
   "packageManager": "pnpm@8.15.9",
   "workspaces": [
     "apps/*",

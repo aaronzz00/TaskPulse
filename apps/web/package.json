@@ -2,12 +2,13 @@
   "name": "@taskpulse/web",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
-    "dev": "next dev -p 5173",
-    "build": "next build",
+    "dev": "tsc -p ../../packages/contracts/tsconfig.json && next dev -p 5173",
+    "build": "tsc -p ../../packages/contracts/tsconfig.json && next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "find . \\( -name '*.test.ts' -o -name '*.spec.ts' \\) -not -path './.next/*' -not -path './node_modules/*' -print0 | xargs -0 tsx --test",
+    "test": "tsc -p ../../packages/contracts/tsconfig.json && find . \\( -name '*.test.ts' -o -name '*.spec.ts' \\) -not -path './.next/*' -not -path './node_modules/*' -print0 | xargs -0 tsx --test",
     "clean": "next clean"
   },
   "dependencies": {

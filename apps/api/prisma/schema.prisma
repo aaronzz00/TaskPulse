@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -17,12 +17,14 @@ model Project {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tasks     Task[]
-  insights  AIInsight[]
+  tasks            Task[]
+  insights         AIInsight[]
+  scheduleVersions ScheduleVersion[]
 }
 
 model Task {
   id             String   @id @default(cuid())
+  displayId      String?
   projectId      String
   parentId       String?
   title          String
@@ -48,6 +50,8 @@ model Task {
   dependencies Dependency[] @relation("DependencySource")
   dependents   Dependency[] @relation("DependencyTarget")
   insights     AIInsight[]
+
+  @@unique([projectId, displayId])
 }
 
 model Dependency {
@@ -78,6 +82,41 @@ model AIInsight {
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   task    Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+}
+
+model ScheduleVersion {
+  id              String   @id @default(cuid())
+  projectId       String
+  name            String
+  description     String   @default("")
+  type            String   @default("manual")
+  snapshotJson    Json
+  taskCount       Int      @default(0)
+  dependencyCount Int      @default(0)
+  isBaseline      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  createdById     String?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([projectId, isBaseline])
+}
+
+model AIProviderConfig {
+  id              String   @id @default(cuid())
+  name            String
+  provider        String
+  baseUrl         String?
+  model           String
+  apiKeyEncrypted String
+  apiKeyPreview   String
+  enabled         Boolean  @default(true)
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([enabled, isDefault])
 }
 
 model User {

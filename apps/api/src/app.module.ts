@@ -5,6 +5,7 @@ import { TasksModule } from './tasks/tasks.module';
 import { DependenciesModule } from './dependencies/dependencies.module';
 import { InsightsModule } from './insights/insights.module';
 import { AIModule } from './ai/ai.module';
+import { ScheduleVersionsModule } from './schedule-versions/schedule-versions.module';
 import { WebSocketModule } from './websocket/websocket.module';
 import { PrismaService } from './common/prisma.service';
 
@@ -19,6 +20,7 @@ import { PrismaService } from './common/prisma.service';
     DependenciesModule,
     InsightsModule,
     AIModule,
+    ScheduleVersionsModule,
     WebSocketModule,
   ],
   providers: [PrismaService],

@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useStore } from '@/store/useStore';
+import { getSearchResults } from '@/lib/taskSearch';
+import { ProjectSelector } from '@/components/ProjectSelector';
+import { ScheduleVersionPanel } from '@/components/ScheduleVersionPanel';
 import { 
   Sparkles, 
   Search, 
   Undo, 
   Redo, 
-  ChevronDown,
   Activity,
   LayoutDashboard,
   Package,
@@ -19,7 +21,17 @@ import {
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { toggleAiSidebar, project } = useStore();
+  const {
+    toggleAiSidebar,
+    project,
+    tasks,
+    searchQuery,
+    activeSearchResultIndex,
+    setSearchQuery,
+    advanceSearchResult,
+  } = useStore();
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchResults = React.useMemo(() => getSearchResults(tasks, searchQuery), [tasks, searchQuery]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -28,6 +40,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       const activeTag = activeElement.tagName.toLowerCase();
       const isInput = activeTag === 'input' || activeTag === 'textarea';
       
+      if (e.metaKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
+
       if (!isInput && e.metaKey && e.key === 'z') {
         if (e.shiftKey) console.log('Redo');
         else console.log('Undo');
@@ -48,10 +67,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <h1 className="text-lg font-bold tracking-tight text-slate-900">TaskPulse</h1>
           </div>
           <div className="h-6 w-[1px] bg-slate-200" />
-          <div className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 px-2 py-1 rounded text-sm font-medium text-slate-800">
-            <span>{project?.name || 'Loading project...'}</span>
-            <ChevronDown size={16} className="text-slate-400" />
-          </div>
+          <ProjectSelector />
         </div>
 
         <div className="flex items-center gap-4">
@@ -60,15 +76,33 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               <Search size={16} className="text-slate-400" />
             </div>
             <input 
+              ref={searchInputRef}
               type="text" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  advanceSearchResult();
+                }
+                if (e.key === 'Escape') {
+                  setSearchQuery('');
+                }
+              }}
               placeholder="Search (Cmd+K)" 
-              className="block w-64 pl-10 pr-3 py-1.5 bg-slate-100 border-none rounded-md text-sm focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
+              className="block w-72 pl-10 pr-16 py-1.5 bg-slate-100 border-none rounded-md text-sm focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
             />
+            {searchQuery.trim() && (
+              <div className="absolute inset-y-0 right-2 flex items-center text-[11px] text-slate-500 font-medium">
+                {searchResults.length > 0 ? `${activeSearchResultIndex + 1 > 0 ? activeSearchResultIndex + 1 : 0}/${searchResults.length}` : '0'}
+              </div>
+            )}
           </div>
           <div className="flex items-center border border-slate-200 rounded-md overflow-hidden bg-white shadow-sm">
             <button className="p-1.5 hover:bg-slate-50 border-r border-slate-200 cursor-pointer" title="Undo"><Undo size={16} className="text-slate-600" /></button>
             <button className="p-1.5 hover:bg-slate-50 cursor-pointer" title="Redo"><Redo size={16} className="text-slate-600" /></button>
           </div>
+          <ScheduleVersionPanel />
           <button 
             onClick={toggleAiSidebar} 
             className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full text-xs font-semibold hover:bg-indigo-100 cursor-pointer transition-colors"

@@ -152,10 +152,11 @@ async function main() {
   ];
 
   const createdTasks = [];
-  for (const taskData of tasksData) {
+  for (const [index, taskData] of tasksData.entries()) {
     const task = await prisma.task.create({
       data: {
         ...taskData,
+        displayId: `T-${String(index + 1).padStart(3, '0')}`,
         projectId: project.id,
       },
     });

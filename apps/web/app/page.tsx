@@ -6,6 +6,7 @@ import { Workspace } from '@/components/Workspace';
 import { AISidebar } from '@/components/AISidebar';
 import { useStore } from '@/store/useStore';
 import { TaskDrawer } from '@/components/TaskDrawer';
+import { ErrorBanner } from '@/components/ErrorBanner';
 
 export default function Page() {
   const { fetchData, isLoading } = useStore();
@@ -25,6 +26,7 @@ export default function Page() {
 
   return (
     <Layout>
+      <ErrorBanner />
       <Workspace />
       <AISidebar />
       <TaskDrawer />

@@ -3,11 +3,34 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { formatShortDate } from '@/lib/dateLabels';
+import { calculateCriticalPath } from '@/lib/criticalPath';
+import { getTaskDisplayId } from '@/lib/taskDisplay';
+import { buildSearchExpansion, getSearchResults, taskMatchesSearch } from '@/lib/taskSearch';
+import {
+  buildVisibleTaskList,
+  clampTimelineScrollX,
+  getDefaultTaskDates,
+  getTodayScrollX,
+  getTimelineBounds,
+  getTimelineStartDate,
+  getXFromDate,
+  shiftDateOnlyRange,
+} from '@/lib/timeline';
 
 export const Workspace: React.FC = () => {
-  const { tasks, viewMode, setViewMode } = useStore();
+  const {
+    tasks,
+    viewMode,
+    setViewMode,
+    searchQuery,
+    activeSearchResultIndex,
+    selectedTaskId,
+    dependencyViewMode,
+    setDependencyViewMode,
+  } = useStore();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const taskListRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const [scroll, setScroll] = useState({ x: 0, y: 0 });
   const [collapsedTasks, setCollapsedTasks] = useState<Set<string>>(new Set());
   const scrollRef = useRef({ x: 0, y: 0 });
@@ -32,30 +55,53 @@ export const Workspace: React.FC = () => {
     });
   };
 
-  const flatTasks = React.useMemo(() => {
-    let result: (typeof tasks[0] & { depth: number; hasChildren: boolean })[] = [];
-    const getChildren = (parentId: string | undefined, depth: number, isHidden: boolean) => {
-        const children = tasks.filter(t => t.parentId === parentId);
-        children.forEach(child => {
-            const childHasChildren = tasks.some(t => t.parentId === child.id);
-            if (!isHidden) {
-              result.push({ ...child, depth, hasChildren: childHasChildren });
-            }
-            const childHidden = isHidden || collapsedTasks.has(child.id);
-            getChildren(child.id, depth + 1, childHidden);
-        });
-    };
-    getChildren(undefined, 0, false);
-    const existingIds = new Set(result.map(t => t.id));
-    tasks.forEach(t => {
-      if (!existingIds.has(t.id) && !t.parentId) { // only process true orphans not handled by getChildren
-          const childHasChildren = tasks.some(c => c.parentId === t.id);
-          result.push({ ...t, depth: 0, hasChildren: childHasChildren });
-          getChildren(t.id, 1, collapsedTasks.has(t.id));
-      }
+  const searchResultIds = React.useMemo(() => getSearchResults(tasks, searchQuery), [tasks, searchQuery]);
+  const activeSearchTaskId = activeSearchResultIndex >= 0 ? searchResultIds[activeSearchResultIndex] : null;
+  const searchExpandedTaskIds = React.useMemo(() => buildSearchExpansion(tasks, searchResultIds), [tasks, searchResultIds]);
+  const effectiveCollapsedTasks = React.useMemo(() => {
+    if (searchResultIds.length === 0) return collapsedTasks;
+    return new Set([...collapsedTasks].filter((taskId) => !searchExpandedTaskIds.has(taskId)));
+  }, [collapsedTasks, searchExpandedTaskIds, searchResultIds.length]);
+  const flatTasks = React.useMemo(() => buildVisibleTaskList(tasks, effectiveCollapsedTasks), [tasks, effectiveCollapsedTasks]);
+  const criticalPath = React.useMemo(() => calculateCriticalPath(tasks), [tasks]);
+  const criticalTaskIds = React.useMemo(() => new Set(criticalPath.criticalTaskIds), [criticalPath.criticalTaskIds]);
+  const criticalDependencyIds = React.useMemo(() => new Set(criticalPath.criticalDependencyIds), [criticalPath.criticalDependencyIds]);
+  const timelineBounds = React.useMemo(() => getTimelineBounds(tasks), [tasks]);
+  const timelineStartDate = timelineBounds.startDate;
+
+  const getDayWidth = React.useCallback(() => viewMode === 'day' ? 100 : viewMode === 'week' ? 20 : 5, [viewMode]);
+  const clampScrollXForCanvas = React.useCallback((x: number) => {
+    const rect = canvasRef.current?.parentElement?.getBoundingClientRect();
+    return clampTimelineScrollX(x, timelineBounds.totalDays, getDayWidth(), rect?.width ?? 0);
+  }, [getDayWidth, timelineBounds.totalDays]);
+
+  const scrollToToday = React.useCallback(() => {
+    const rect = canvasRef.current?.parentElement?.getBoundingClientRect();
+    const nextX = getTodayScrollX(timelineBounds, new Date(), getDayWidth(), rect?.width ?? 0);
+    setScroll((current) => {
+      const next = { ...current, x: nextX };
+      scrollRef.current = next;
+      return next;
     });
-    return result;
-  }, [tasks, collapsedTasks]);
+  }, [getDayWidth, timelineBounds]);
+
+  useEffect(() => {
+    if (!activeSearchTaskId) return;
+    const index = flatTasks.findIndex((task) => task.id === activeSearchTaskId);
+    if (index < 0) return;
+
+    const nextY = Math.max(0, index * 40 - 80);
+    setScroll((current) => {
+      const next = { ...current, y: nextY };
+      scrollRef.current = next;
+      return next;
+    });
+    if (taskListRef.current) {
+      taskListRef.current.scrollTop = nextY;
+    }
+    useStore.getState().setSelectedTask(activeSearchTaskId);
+    rowRefs.current.get(activeSearchTaskId)?.scrollIntoView({ block: 'center' });
+  }, [activeSearchTaskId, flatTasks]);
 
   // Sync scrollY from task list to canvas state
   const handleTaskListScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -89,42 +135,15 @@ export const Workspace: React.FC = () => {
       const x = clientX - rect.left + currentScroll.x;
       const y = clientY - rect.top + currentScroll.y;
       
-      const storeState = useStore.getState();
-      const { tasks, viewMode } = storeState;
       const dayWidth = viewMode === 'day' ? 100 : viewMode === 'week' ? 20 : 5;
       const rowHeight = 40;
       const headerHeight = 40;
-      const timelineStartDate = new Date('2026-05-01T00:00:00'); 
-      
-      const getXFromD = (dateString: string) => {
-        const d = new Date(dateString + 'T00:00:00');
-        const diffDays = (d.getTime() - timelineStartDate.getTime()) / (1000 * 60 * 60 * 24);
-        return diffDays * dayWidth;
-      };
-
-      // Get hierarchical tasks
-      let flatTasks: (typeof tasks[0] & { depth: number })[] = [];
-      const getChildren = (parentId: string | undefined, depth: number) => {
-          const children = tasks.filter(t => t.parentId === parentId);
-          children.forEach(child => {
-              flatTasks.push({ ...child, depth });
-              getChildren(child.id, depth + 1);
-          });
-      };
-      getChildren(undefined, 0);
-      const existingIds = new Set(flatTasks.map(t => t.id));
-      tasks.forEach(t => {
-        if (!existingIds.has(t.id)) {
-            flatTasks.push({ ...t, depth: 0 });
-            getChildren(t.id, 1);
-        }
-      });
 
       for (let i = 0; i < flatTasks.length; i++) {
         const task = flatTasks[i];
         const taskY = headerHeight + (i * rowHeight) + (rowHeight - 24) / 2;
-        const taskX = getXFromD(task.plannedStart);
-        const taskEnd = getXFromD(task.plannedEnd);
+        const taskX = getXFromDate(task.plannedStart, timelineStartDate, dayWidth);
+        const taskEnd = getXFromDate(task.plannedEnd, timelineStartDate, dayWidth);
         const taskW = Math.max(taskEnd - taskX, 20);
 
         if (y >= taskY && y <= taskY + 24 && x >= taskX - 5 && x <= taskX + taskW + 5) {
@@ -140,7 +159,7 @@ export const Workspace: React.FC = () => {
       e.preventDefault();
       setScroll(s => {
         const newY = Math.max(0, s.y + e.deltaY);
-        const newX = Math.max(0, s.x + e.deltaX);
+        const newX = clampScrollXForCanvas(s.x + e.deltaX);
         if (taskListRef.current) taskListRef.current.scrollTop = newY;
         scrollRef.current = { x: newX, y: newY };
         return scrollRef.current;
@@ -180,7 +199,7 @@ export const Workspace: React.FC = () => {
         
         setScroll(s => {
           const newY = Math.max(0, s.y - dy);
-          const newX = Math.max(0, s.x - dx);
+          const newX = clampScrollXForCanvas(s.x - dx);
           if (taskListRef.current) taskListRef.current.scrollTop = newY;
           scrollRef.current = { x: newX, y: newY };
           return scrollRef.current;
@@ -194,25 +213,16 @@ export const Workspace: React.FC = () => {
         const deltaDays = Math.round(dx / dayWidth);
 
         if (deltaDays !== 0) {
-          const startD = new Date(interactionState.current.initialPlannedStart + 'T00:00:00');
-          const endD = new Date(interactionState.current.initialPlannedEnd + 'T00:00:00');
-
-          if (interactionState.current.mode === 'move') {
-            startD.setDate(startD.getDate() + deltaDays);
-            endD.setDate(endD.getDate() + deltaDays);
-          } else if (interactionState.current.mode === 'resize_left') {
-            startD.setDate(startD.getDate() + deltaDays);
-            if (startD.getTime() > endD.getTime()) startD.setTime(endD.getTime());
-          } else if (interactionState.current.mode === 'resize_right') {
-            endD.setDate(endD.getDate() + deltaDays);
-            if (endD.getTime() < startD.getTime()) endD.setTime(startD.getTime());
-          }
-
-          const formatD = (d: Date) => d.toISOString().split('T')[0];
+          const nextDates = shiftDateOnlyRange(
+            interactionState.current.initialPlannedStart,
+            interactionState.current.initialPlannedEnd,
+            deltaDays,
+            interactionState.current.mode,
+          );
           
           useStore.getState().updateTask(interactionState.current.task.id, {
-            plannedStart: formatD(startD),
-            plannedEnd: formatD(endD)
+            plannedStart: nextDates.plannedStart,
+            plannedEnd: nextDates.plannedEnd
           });
         }
       } else {
@@ -245,7 +255,7 @@ export const Workspace: React.FC = () => {
       canvas.removeEventListener('pointerup', handlePointerUp);
       canvas.removeEventListener('pointercancel', handlePointerUp);
     };
-  }, []);
+  }, [clampScrollXForCanvas, flatTasks, timelineStartDate, viewMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -270,17 +280,9 @@ export const Workspace: React.FC = () => {
       ctx.translate(-scroll.x, -scroll.y);
 
       // --- dynamic date calculation ---
-      const timelineStartDate = new Date('2026-05-01T00:00:00'); 
-      const dayWidth = viewMode === 'day' ? 100 : viewMode === 'week' ? 20 : 5;
+      const dayWidth = getDayWidth();
       const rowHeight = 40;
       const headerHeight = 40;
-      
-      const getXFromDate = (dateString: string) => {
-        const d = new Date(dateString + 'T00:00:00');
-        const diffTime = Math.abs(d.getTime() - timelineStartDate.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays * dayWidth;
-      };
 
       // Grid & Header details
       ctx.strokeStyle = '#e5e7eb';
@@ -290,7 +292,7 @@ export const Workspace: React.FC = () => {
       ctx.textAlign = 'center';
 
       // We draw enough virtual days to over-cover the visible area
-      const visibleDays = Math.ceil((rect.width + scroll.x) / dayWidth) + 10;
+      const visibleDays = Math.min(timelineBounds.totalDays + 1, Math.ceil((rect.width + scroll.x) / dayWidth) + 10);
       const startDayIdx = Math.max(0, Math.floor(scroll.x / dayWidth));
 
       for (let i = startDayIdx; i < visibleDays; i++) {
@@ -335,10 +337,25 @@ export const Workspace: React.FC = () => {
 
       ctx.setLineDash([]);
 
+      const today = new Date();
+      const todayStart = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+      const todayOffsetDays = (todayStart.getTime() - timelineStartDate.getTime()) / (24 * 60 * 60 * 1000);
+      const todayX = todayOffsetDays * dayWidth;
+      if (todayOffsetDays >= 0 && todayOffsetDays <= timelineBounds.totalDays) {
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.08)';
+        ctx.fillRect(todayX, headerHeight + scroll.y, dayWidth, rect.height);
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(todayX, headerHeight + scroll.y);
+        ctx.lineTo(todayX, rect.height + scroll.y);
+        ctx.stroke();
+      }
+
       const drawTaskBar = (task: typeof flatTasks[0], index: number) => {
         const y = headerHeight + (index * rowHeight) + (rowHeight - 24) / 2; // center vertically in row
-        const startX = getXFromDate(task.plannedStart);
-        const endX = getXFromDate(task.plannedEnd);
+        const startX = getXFromDate(task.plannedStart, timelineStartDate, dayWidth);
+        const endX = getXFromDate(task.plannedEnd, timelineStartDate, dayWidth);
         const w = Math.max(endX - startX, 20); // min width
 
         let bgColor = '#d1d5db';
@@ -357,7 +374,8 @@ export const Workspace: React.FC = () => {
           label = `${task.progress}%`;
         }
 
-        if (task.priority === 'critical' && task.status !== 'done') {
+        const isCriticalPathTask = criticalTaskIds.has(task.id);
+        if ((task.priority === 'critical' || isCriticalPathTask) && task.status !== 'done') {
           ctx.shadowColor = 'rgba(239, 68, 68, 0.6)';
           ctx.shadowBlur = 10;
         }
@@ -380,23 +398,36 @@ export const Workspace: React.FC = () => {
         ctx.font = '11px sans-serif';
         ctx.textAlign = 'left';
         ctx.fillText(label, startX + 12, y + 16);
+
+        if (isCriticalPathTask) {
+          ctx.strokeStyle = '#dc2626';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(startX - 1, y - 1, w + 2, 26, 13);
+          ctx.stroke();
+        }
       };
 
       // Draw Dependencies
-      ctx.strokeStyle = '#9ca3af';
-      ctx.lineWidth = 2;
-      
+      const shouldDrawDependency = (taskId: string, dependencyId: string | undefined, sourceTaskId: string) => {
+        if (dependencyViewMode === 'off') return false;
+        if (dependencyViewMode === 'all') return true;
+        if (dependencyViewMode === 'critical') return Boolean(dependencyId && criticalDependencyIds.has(dependencyId));
+        return Boolean(selectedTaskId && (taskId === selectedTaskId || sourceTaskId === selectedTaskId));
+      };
+
       flatTasks.forEach((task, index) => {
         if (task.dependencies && task.dependencies.length > 0) {
           task.dependencies.forEach(dep => {
+            if (!shouldDrawDependency(task.id, dep.id, dep.taskId)) return;
             const depIndex = flatTasks.findIndex(t => t.id === dep.taskId);
             if (depIndex !== -1) {
               const depTask = flatTasks[depIndex];
               
-              const depStart = getXFromDate(depTask.plannedStart);
-              const depEnd = getXFromDate(depTask.plannedEnd);
-              const taskStart = getXFromDate(task.plannedStart);
-              const taskEnd = getXFromDate(task.plannedEnd);
+              const depStart = getXFromDate(depTask.plannedStart, timelineStartDate, dayWidth);
+              const depEnd = getXFromDate(depTask.plannedEnd, timelineStartDate, dayWidth);
+              const taskStart = getXFromDate(task.plannedStart, timelineStartDate, dayWidth);
+              const taskEnd = getXFromDate(task.plannedEnd, timelineStartDate, dayWidth);
 
               const fromY = headerHeight + (depIndex * rowHeight) + (rowHeight / 2);
               const toY = headerHeight + (index * rowHeight) + (rowHeight / 2);
@@ -418,15 +449,30 @@ export const Workspace: React.FC = () => {
                  toX = taskEnd;
               }
 
+              const isCriticalDependency = Boolean(dep.id && criticalDependencyIds.has(dep.id));
+              const isSelectedDependency = Boolean(selectedTaskId && (task.id === selectedTaskId || dep.taskId === selectedTaskId));
+              const direction = toX >= fromX ? 1 : -1;
+              const elbowOffset = Math.max(18, Math.min(48, Math.abs(toX - fromX) / 2));
+              const midX = fromX + direction * elbowOffset;
+
+              ctx.strokeStyle = isCriticalDependency ? '#dc2626' : isSelectedDependency ? '#4f46e5' : 'rgba(100, 116, 139, 0.35)';
+              ctx.fillStyle = ctx.strokeStyle;
+              ctx.lineWidth = isCriticalDependency || isSelectedDependency ? 2.5 : 1.25;
+              ctx.setLineDash(isCriticalDependency ? [] : [5, 4]);
               ctx.beginPath();
               ctx.moveTo(fromX, fromY);
-              
-              // Handle control points for bezier depending on relation direction
-              const ctrl1X = fromX + (toX >= fromX ? 20 : -20);
-              const ctrl2X = toX + (toX >= fromX ? -20 : 20);
-              
-              ctx.bezierCurveTo(ctrl1X, fromY, ctrl2X, toY, toX, toY);
+              ctx.lineTo(midX, fromY);
+              ctx.lineTo(midX, toY);
+              ctx.lineTo(toX, toY);
               ctx.stroke();
+              ctx.setLineDash([]);
+
+              ctx.beginPath();
+              ctx.moveTo(toX, toY);
+              ctx.lineTo(toX - direction * 7, toY - 4);
+              ctx.lineTo(toX - direction * 7, toY + 4);
+              ctx.closePath();
+              ctx.fill();
             }
           });
         }
@@ -472,19 +518,45 @@ export const Workspace: React.FC = () => {
         }
       }
 
+      if (todayOffsetDays >= 0 && todayOffsetDays <= timelineBounds.totalDays) {
+        const x = todayX - scroll.x;
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, headerHeight);
+        ctx.stroke();
+        ctx.fillStyle = '#92400e';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('Today', x + 5, 12);
+      }
+
     };
 
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
 
-  }, [flatTasks, viewMode, scroll]);
+  }, [
+    criticalDependencyIds,
+    criticalTaskIds,
+    dependencyViewMode,
+    flatTasks,
+    getDayWidth,
+    selectedTaskId,
+    timelineBounds.totalDays,
+    timelineStartDate,
+    viewMode,
+    scroll,
+  ]);
 
   return (
     <div className="flex flex-1 overflow-hidden relative">
       <div className="w-[560px] border-r border-slate-200 bg-white flex flex-col shrink-0 z-10">
         <div className="h-10 flex items-center border-b border-slate-100 bg-slate-50/50">
           <div className="w-10 px-4 shrink-0"></div>
+          <div className="w-16 px-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">ID</div>
           <div className="flex-1 px-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Tasks</div>
           <div className="w-24 px-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Status</div>
           <div className="w-20 px-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">Start</div>
@@ -501,7 +573,7 @@ export const Workspace: React.FC = () => {
             e.preventDefault();
             const draggingId = e.dataTransfer.getData('taskId');
             if (draggingId) {
-              useStore.getState().updateTask(draggingId, { parentId: undefined });
+              useStore.getState().updateTask(draggingId, { parentId: null });
             }
           }}
           className="overflow-y-auto overflow-x-hidden flex-1 scrollbar-hide shrink-0" 
@@ -522,6 +594,10 @@ export const Workspace: React.FC = () => {
             return (
               <div 
                 key={task.id} 
+                ref={(element) => {
+                  if (element) rowRefs.current.set(task.id, element);
+                  else rowRefs.current.delete(task.id);
+                }}
                 draggable
                 onDragStart={(e) => {
                   e.dataTransfer.setData('taskId', task.id);
@@ -547,19 +623,21 @@ export const Workspace: React.FC = () => {
                   setDragOverId(null);
                   setDropPosition(null);
                 }}
-                onDrop={(e) => {
+                onDrop={async (e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   
                   const draggingId = e.dataTransfer.getData('taskId');
-                  if (draggingId && dragOverId === task.id && dropPosition && canDrop(draggingId, task.id)) {
-                    useStore.getState().moveTask(draggingId, task.id, dropPosition);
-                  }
-                  
+                  const currentDragOverId = dragOverId;
+                  const currentDropPosition = dropPosition;
                   setDragOverId(null);
                   setDropPosition(null);
+
+                  if (draggingId && currentDragOverId === task.id && currentDropPosition && canDrop(draggingId, task.id)) {
+                    await useStore.getState().moveTask(draggingId, task.id, currentDropPosition);
+                  }
                 }}
-                className={`group h-10 flex items-center border-b border-slate-50 hover:bg-slate-50 cursor-pointer relative ${task.status === 'in_progress' ? 'bg-blue-50/30' : ''} ${dragOverId === task.id && dropPosition === 'inside' ? 'bg-indigo-50' : ''}`}
+                className={`group h-10 flex items-center border-b border-slate-50 hover:bg-slate-50 cursor-pointer relative ${task.status === 'in_progress' ? 'bg-blue-50/30' : ''} ${criticalTaskIds.has(task.id) ? 'bg-red-50/40' : ''} ${taskMatchesSearch(task, searchQuery) ? 'bg-amber-50/60' : ''} ${activeSearchTaskId === task.id ? 'ring-1 ring-inset ring-amber-400 bg-amber-100/70' : ''} ${dragOverId === task.id && dropPosition === 'inside' ? 'bg-indigo-50' : ''}`}
               >
                 {dragOverId === task.id && dropPosition === 'before' && <div className="absolute top-0 left-0 right-0 h-0.5 bg-indigo-500 z-10" />}
                 {dragOverId === task.id && dropPosition === 'after' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500 z-10" />}
@@ -568,6 +646,12 @@ export const Workspace: React.FC = () => {
                   onClick={() => useStore.getState().setSelectedTask(task.id)}
                 >
                   {index + 1}
+                </div>
+                <div
+                  className="w-16 px-2 shrink-0 text-[11px] text-slate-500 font-mono"
+                  onClick={() => useStore.getState().setSelectedTask(task.id)}
+                >
+                  {getTaskDisplayId(task)}
                 </div>
                 <div 
                   className="flex-1 px-2 flex items-center gap-2 overflow-hidden" 
@@ -585,20 +669,21 @@ export const Workspace: React.FC = () => {
                   <div className={`w-4 h-4 shrink-0 border-2 rounded-full flex items-center justify-center ${borderColor} ${task.status === 'done' ? fillColor : ''}`}>
                     {task.status === 'in_progress' && <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></div>}
                   </div>
-                  <span className={`text-[13px] truncate font-medium ${task.priority === 'critical' ? 'text-slate-900' : 'text-slate-700'}`}>
-                    {task.title} {task.priority === 'critical' && <span className="text-red-500 ml-1">🔥</span>}
+                  <span className={`text-[13px] truncate font-medium ${task.priority === 'critical' || criticalTaskIds.has(task.id) ? 'text-slate-900' : 'text-slate-700'}`}>
+                    {task.title} {(task.priority === 'critical' || criticalTaskIds.has(task.id)) && <span className="text-red-500 ml-1">●</span>}
                   </span>
                 </div>
                 {/* Add Subtask action */}
                 <button 
                   onClick={(e) => {
                     e.stopPropagation();
+                    const dates = getDefaultTaskDates(tasks, task);
                     useStore.getState().createTask({
                       title: 'New Subtask',
                       status: 'todo',
                       priority: 'medium',
-                      plannedStart: task.plannedStart,
-                      plannedEnd: task.plannedEnd,
+                      plannedStart: dates.plannedStart,
+                      plannedEnd: dates.plannedEnd,
                       progress: 0,
                       parentId: task.id
                     });
@@ -638,12 +723,13 @@ export const Workspace: React.FC = () => {
           <div className="p-4">
             <button 
               onClick={() => {
+                const dates = getDefaultTaskDates(tasks);
                 useStore.getState().createTask({
                   title: 'New Task',
                   status: 'todo',
                   priority: 'medium',
-                  plannedStart: '2026-05-15',
-                  plannedEnd: '2026-05-20',
+                  plannedStart: dates.plannedStart,
+                  plannedEnd: dates.plannedEnd,
                   progress: 0
                 });
               }}
@@ -657,6 +743,12 @@ export const Workspace: React.FC = () => {
 
       <div className="flex-1 flex flex-col relative overflow-hidden bg-white">
         <div className="absolute top-2 right-4 z-20 flex bg-white rounded shadow-sm border border-slate-200 p-0.5">
+          <button
+            onClick={scrollToToday}
+            className="px-3 py-1 text-[11px] font-bold rounded-sm cursor-pointer transition-all text-amber-700 hover:bg-amber-50 border-r border-slate-100"
+          >
+            Today
+          </button>
           {['day', 'week', 'month'].map(mode => (
             <button 
               key={mode} 
@@ -665,6 +757,21 @@ export const Workspace: React.FC = () => {
                 viewMode === mode 
                 ? 'bg-indigo-50 text-indigo-600' 
                 : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+        <div className="absolute top-12 right-4 z-20 flex bg-white rounded shadow-sm border border-slate-200 p-0.5">
+          {(['selected', 'critical', 'all', 'off'] as const).map(mode => (
+            <button
+              key={mode}
+              onClick={() => setDependencyViewMode(mode)}
+              className={`px-2.5 py-1 text-[10px] font-bold rounded-sm capitalize cursor-pointer transition-all ${
+                dependencyViewMode === mode
+                  ? mode === 'critical' ? 'bg-red-50 text-red-700' : 'bg-indigo-50 text-indigo-600'
+                  : 'text-slate-500 hover:bg-slate-50'
               }`}
             >
               {mode}

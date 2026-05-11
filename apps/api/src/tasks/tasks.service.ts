@@ -35,6 +35,7 @@ export class TasksService {
     return this.prisma.task.create({
       data: {
         ...createTaskDto,
+        displayId: createTaskDto.displayId?.trim() || await this.nextDisplayId(createTaskDto.projectId),
         plannedStart: new Date(createTaskDto.plannedStart),
         plannedEnd: new Date(createTaskDto.plannedEnd),
         actualStart: createTaskDto.actualStart ? new Date(createTaskDto.actualStart) : null,
@@ -164,5 +165,18 @@ export class TasksService {
     }
 
     return data;
+  }
+
+  private async nextDisplayId(projectId: string) {
+    const tasks = await this.prisma.task.findMany({
+      where: { projectId, displayId: { startsWith: 'T-' } },
+      select: { displayId: true },
+    });
+    const maxNumber = tasks.reduce((max, task) => {
+      const match = task.displayId?.match(/^T-(\d+)$/i);
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0);
+
+    return `T-${String(maxNumber + 1).padStart(3, '0')}`;
   }
 }

@@ -6,6 +6,7 @@ import type { BackendTask, BackendProject } from './types';
 test('maps backend task dates and dependency rows to workspace task shape', () => {
   const task: BackendTask = {
     id: 'task-2',
+    displayId: 'T-002',
     projectId: 'project-1',
     parentId: 'task-1',
     title: 'Validate integration',
@@ -33,6 +34,7 @@ test('maps backend task dates and dependency rows to workspace task shape', () =
 
   assert.deepEqual(mapBackendTaskToWorkspaceTask(task), {
     id: 'task-2',
+    displayId: 'T-002',
     title: 'Validate integration',
     status: 'in_progress',
     priority: 'critical',
@@ -40,7 +42,7 @@ test('maps backend task dates and dependency rows to workspace task shape', () =
     plannedEnd: '2026-05-10',
     progress: 25,
     parentId: 'task-1',
-    dependencies: [{ taskId: 'task-1', type: 'FS', lag: 1 }],
+    dependencies: [{ id: 'dep-1', taskId: 'task-1', type: 'FS', lag: 1 }],
   });
 });
 

@@ -1,7 +1,9 @@
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { LLMProviderService } from './llm.provider';
 import { CreateChatDto, LLMProvider } from './dto/create-chat.dto';
+import { AIProviderKind, CreateAIProviderConfigDto } from './dto/ai-provider-config.dto';
 
 export interface ParsedTask {
   title: string;
@@ -26,8 +28,6 @@ export class AIService {
   ) {}
 
   async chat(createChatDto: CreateChatDto) {
-    const provider = createChatDto.provider || this.llmProvider.getPreferredProvider();
-    const model = createChatDto.model || this.llmProvider.getDefaultModel(provider);
     const { projectId, message } = createChatDto;
 
     const project = await this.prisma.project.findUnique({
@@ -45,6 +45,27 @@ export class AIService {
 
     const context = this.buildProjectContext(project);
     const prompt = `${context}\n\nUser question: ${message}`;
+    const configuredProvider = await this.resolveProviderConfig(createChatDto.providerConfigId);
+
+    if (configuredProvider) {
+      this.logger.log(`Processing chat request for project ${projectId} using ${configuredProvider.name}`);
+      const response = await this.llmProvider.chatWithConfig(prompt, {
+        provider: this.normalizeProviderKind(configuredProvider.provider),
+        baseUrl: configuredProvider.baseUrl,
+        model: configuredProvider.model,
+        apiKey: this.decryptApiKey(configuredProvider.apiKeyEncrypted),
+      });
+
+      return {
+        response,
+        provider: configuredProvider.name,
+        model: configuredProvider.model,
+        projectId,
+      };
+    }
+
+    const provider = createChatDto.provider || this.llmProvider.getPreferredProvider();
+    const model = createChatDto.model || this.llmProvider.getDefaultModel(provider);
 
     this.logger.log(`Processing chat request for project ${projectId} using ${provider}`);
 
@@ -56,6 +77,73 @@ export class AIService {
       model,
       projectId,
     };
+  }
+
+  async listProviders() {
+    const providers = await this.prisma.aIProviderConfig.findMany({
+      orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }],
+    });
+
+    return providers.map((provider: any) => this.sanitizeProvider(provider));
+  }
+
+  async createProvider(dto: CreateAIProviderConfigDto) {
+    if (dto.isDefault) {
+      await this.prisma.aIProviderConfig.updateMany({
+        where: { isDefault: true },
+        data: { isDefault: false },
+      });
+    }
+
+    const provider = await this.prisma.aIProviderConfig.create({
+      data: {
+        name: dto.name,
+        provider: dto.provider,
+        baseUrl: dto.baseUrl || null,
+        model: dto.model,
+        apiKeyEncrypted: this.encryptApiKey(dto.apiKey),
+        apiKeyPreview: this.maskApiKey(dto.apiKey),
+        enabled: dto.enabled ?? true,
+        isDefault: dto.isDefault ?? false,
+      },
+    });
+
+    return this.sanitizeProvider(provider);
+  }
+
+  async setDefaultProvider(id: string) {
+    const provider = await this.prisma.aIProviderConfig.findUnique({ where: { id } });
+    if (!provider) {
+      throw new NotFoundException(`AI provider config with ID ${id} not found`);
+    }
+
+    await this.prisma.aIProviderConfig.updateMany({
+      where: { isDefault: true },
+      data: { isDefault: false },
+    });
+
+    const updated = await this.prisma.aIProviderConfig.update({
+      where: { id },
+      data: { isDefault: true, enabled: true },
+    });
+
+    return this.sanitizeProvider(updated);
+  }
+
+  async testProvider(id: string) {
+    const provider = await this.prisma.aIProviderConfig.findUnique({ where: { id } });
+    if (!provider) {
+      throw new NotFoundException(`AI provider config with ID ${id} not found`);
+    }
+
+    await this.llmProvider.chatWithConfig('Reply with ok.', {
+      provider: this.normalizeProviderKind(provider.provider),
+      baseUrl: provider.baseUrl,
+      model: provider.model,
+      apiKey: this.decryptApiKey(provider.apiKeyEncrypted),
+    });
+
+    return { ok: true, message: 'Connection succeeded' };
   }
 
   async parseProject(conversation: string): Promise<ParsedProject> {
@@ -116,6 +204,66 @@ ${tasksSummary || 'No tasks yet'}
     `.trim();
   }
 
+  private async resolveProviderConfig(providerConfigId?: string) {
+    if (providerConfigId) {
+      const provider = await this.prisma.aIProviderConfig.findUnique({ where: { id: providerConfigId } });
+      if (!provider) {
+        throw new NotFoundException(`AI provider config with ID ${providerConfigId} not found`);
+      }
+      return provider.enabled ? provider : null;
+    }
+
+    return this.prisma.aIProviderConfig.findFirst({
+      where: { enabled: true, isDefault: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  private sanitizeProvider(provider: any) {
+    const { apiKeyEncrypted: _apiKeyEncrypted, ...safeProvider } = provider;
+    return safeProvider;
+  }
+
+  private normalizeProviderKind(provider: string): AIProviderKind {
+    return provider === 'anthropic' ? 'anthropic' : 'openai-compatible';
+  }
+
+  private maskApiKey(apiKey: string) {
+    const value = apiKey.trim();
+    if (value.length <= 7) {
+      return `...${value.slice(-4)}`;
+    }
+
+    return `${value.slice(0, 3)}...${value.slice(-4)}`;
+  }
+
+  private encryptApiKey(apiKey: string) {
+    return AIService.encryptApiKeyForTest(apiKey);
+  }
+
+  private decryptApiKey(encrypted: string) {
+    const [ivHex, tagHex, encryptedHex] = encrypted.split(':');
+    const decipher = createDecipheriv('aes-256-gcm', AIService.encryptionKey(), Buffer.from(ivHex, 'hex'));
+    decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+    return Buffer.concat([
+      decipher.update(Buffer.from(encryptedHex, 'hex')),
+      decipher.final(),
+    ]).toString('utf8');
+  }
+
+  static encryptApiKeyForTest(apiKey: string) {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', AIService.encryptionKey(), iv);
+    const encrypted = Buffer.concat([cipher.update(apiKey, 'utf8'), cipher.final()]);
+    return `${iv.toString('hex')}:${cipher.getAuthTag().toString('hex')}:${encrypted.toString('hex')}`;
+  }
+
+  private static encryptionKey() {
+    return createHash('sha256')
+      .update(process.env.APP_SECRET || 'taskpulse-local-dev-secret')
+      .digest();
+  }
+
   async getChatHistory(projectId: string) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -158,11 +306,19 @@ Provide:
     `.trim();
 
     const provider = this.llmProvider.getPreferredProvider();
-    const response = await this.llmProvider.chat(
-      prompt,
-      provider,
-      this.llmProvider.getDefaultModel(provider),
-    );
+    const configuredProvider = await this.resolveProviderConfig();
+    const response = configuredProvider
+      ? await this.llmProvider.chatWithConfig(prompt, {
+          provider: this.normalizeProviderKind(configuredProvider.provider),
+          baseUrl: configuredProvider.baseUrl,
+          model: configuredProvider.model,
+          apiKey: this.decryptApiKey(configuredProvider.apiKeyEncrypted),
+        })
+      : await this.llmProvider.chat(
+          prompt,
+          provider,
+          this.llmProvider.getDefaultModel(provider),
+        );
 
     return {
       insights: response,
