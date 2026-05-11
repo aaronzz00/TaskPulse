@@ -146,14 +146,3 @@ pnpm test
 pnpm build
 DATABASE_URL="postgresql://taskpulse:taskpulse@localhost:55432/taskpulse?schema=public" pnpm --filter @taskpulse/api exec prisma validate
 ```
-
-## 数据和密钥安全
-
-不要提交以下内容：
-
-- `.env` 文件
-- `apps/api/prisma/dev.db`
-- `.local-backups/*`
-- `Whisper_Schedule_*.xlsx`
-- 生产数据库 dump
-- 原始 AI Provider API Key
