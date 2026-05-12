@@ -8,7 +8,7 @@ TaskPulse 部署包含三个核心部分：
 - API 服务：`apps/api`，NestJS + Prisma。
 - Web 服务：`apps/web`，Next.js 前端。
 
-本地开发推荐使用 `deploy/local/docker-compose.postgres.yml` 只启动 PostgreSQL，然后在本机分别启动 API 和 Web。生产部署可参考 `deploy/tencent/docker-compose.prod.yml`。
+本地开发推荐使用 `deploy/local/docker-compose.postgres.yml` 只启动 PostgreSQL，然后在本机分别启动 API 和 Web。生产部署推荐使用 `deploy/tencent/docker-compose.prod.yml`，并可通过 GitHub Actions SSH 自动部署到腾讯云 CVM 或 Lighthouse。
 
 ## 2. 本地开发部署
 
@@ -145,15 +145,43 @@ docker exec -i taskpulse-postgres psql -U taskpulse -d taskpulse < taskpulse-bac
 
 不要把生产备份文件提交到仓库。
 
-## 5. 生产部署参考
+## 5. 腾讯云生产部署
 
-生产部署骨架位于：
+生产部署文件位于：
 
 ```text
 deploy/tencent/docker-compose.prod.yml
+deploy/tencent/Caddyfile
+deploy/tencent/env.example
+deploy/tencent/deploy.sh
 ```
 
-推荐在服务器上准备 `.env`，至少包含：
+### 5.1 服务器要求
+
+- Tencent Cloud CVM 或 Lighthouse
+- Ubuntu 22.04 或 24.04
+- Docker Engine 和 Docker Compose
+- 安全组开放 `80` 和 `443`
+- 仓库可被服务器拉取。如果仓库为 public，服务器无需 GitHub deploy key。
+
+生产 Compose 会启动：
+
+- `postgres`：PostgreSQL 17，仅在 Docker 网络内暴露。
+- `api`：NestJS API，启动前会生成 Prisma client、应用迁移并构建 API。
+- `web`：Next.js Web，容器内构建并启动。
+- `proxy`：Caddy，负责域名、HTTPS 和 `/api/*` 反向代理。
+
+### 5.2 首次服务器初始化
+
+在服务器上安装 Docker 后，克隆仓库到固定目录：
+
+```bash
+git clone https://github.com/aaronzz00/TaskPulse.git /opt/taskpulse
+cd /opt/taskpulse
+cp deploy/tencent/env.example deploy/tencent/.env
+```
+
+编辑服务器上的 `deploy/tencent/.env`。至少包含：
 
 ```text
 POSTGRES_DB=taskpulse
@@ -168,25 +196,95 @@ NEXT_PUBLIC_API_URL=https://<your-domain>/api
 TASKPULSE_DOMAIN=<your-domain>
 ```
 
-启动：
+`deploy/tencent/.env` 只保存在服务器，不提交到 Git。
+
+首次启动：
 
 ```bash
-docker compose -f deploy/tencent/docker-compose.prod.yml up -d
+bash deploy/tencent/deploy.sh
 ```
 
-首次部署后应用迁移：
+等价的手动 Compose 命令：
 
 ```bash
-docker compose -f deploy/tencent/docker-compose.prod.yml exec api pnpm --filter @taskpulse/api exec prisma migrate deploy
+docker compose --env-file deploy/tencent/.env -f deploy/tencent/docker-compose.prod.yml up -d --build --remove-orphans
+```
+
+API 容器启动时会自动执行 `prisma migrate deploy`。如需手动迁移：
+
+```bash
+docker compose --env-file deploy/tencent/.env -f deploy/tencent/docker-compose.prod.yml run --rm api pnpm --filter @taskpulse/api prisma migrate deploy
 ```
 
 查看日志：
 
 ```bash
-docker compose -f deploy/tencent/docker-compose.prod.yml logs -f api
-docker compose -f deploy/tencent/docker-compose.prod.yml logs -f web
-docker compose -f deploy/tencent/docker-compose.prod.yml logs -f proxy
+docker compose --env-file deploy/tencent/.env -f deploy/tencent/docker-compose.prod.yml logs -f api
+docker compose --env-file deploy/tencent/.env -f deploy/tencent/docker-compose.prod.yml logs -f web
+docker compose --env-file deploy/tencent/.env -f deploy/tencent/docker-compose.prod.yml logs -f proxy
 ```
+
+查看服务状态：
+
+```bash
+docker compose --env-file deploy/tencent/.env -f deploy/tencent/docker-compose.prod.yml ps
+```
+
+### 5.3 GitHub Actions SSH 自动部署
+
+短期最简单的自动部署方案是 GitHub Actions 通过 SSH 登录腾讯云服务器，在服务器上拉取最新 `main` 并运行 `deploy/tencent/deploy.sh`。
+
+已提供 workflow：
+
+```text
+.github/workflows/deploy-tencent-ssh.yml
+```
+
+触发方式：
+
+- push 到 `main`
+- 在 GitHub Actions 页面手动运行 `workflow_dispatch`
+
+GitHub workflow 会：
+
+1. Checkout 仓库。
+2. 启用 pnpm 并安装依赖。
+3. 运行 `pnpm test`。
+4. 运行 `pnpm build`。
+5. 通过 SSH 登录腾讯云服务器。
+6. 在 `TENCENT_DEPLOY_PATH` 下执行：
+
+```bash
+git fetch origin main
+git checkout main
+git reset --hard origin/main
+bash deploy/tencent/deploy.sh
+```
+
+### 5.4 GitHub Secrets
+
+建议创建 GitHub Environment：`production`，并配置以下 secrets：
+
+```text
+TENCENT_HOST=your-server-public-ip-or-domain
+TENCENT_USER=ubuntu
+TENCENT_SSH_KEY=private SSH key with access to the server
+TENCENT_DEPLOY_PATH=/opt/taskpulse
+```
+
+`TENCENT_SSH_KEY` 建议使用专用部署密钥。把对应 public key 写入服务器用户的 `~/.ssh/authorized_keys`。
+
+服务器上的部署目录会被 `git reset --hard origin/main` 覆盖。不要在该目录中保留手工源码修改；生产配置、数据库数据和备份应放在 Git 忽略路径或 Docker volume 中。
+
+### 5.5 生产备份
+
+创建 PostgreSQL 压缩备份：
+
+```bash
+docker compose --env-file deploy/tencent/.env -f deploy/tencent/docker-compose.prod.yml exec postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > "taskpulse-$(date +%Y%m%d-%H%M%S).sql.gz"
+```
+
+备份文件应存储在仓库外部，且不要提交到 Git。
 
 ## 6. 发布检查清单
 

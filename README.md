@@ -126,7 +126,7 @@ apps/api              NestJS API、Prisma、PostgreSQL 数据模型
 apps/web              Next.js 前端工作台
 packages/contracts    前后端共享类型和映射
 deploy/local          本地 PostgreSQL 17 Docker Compose
-deploy/tencent        腾讯云部署骨架
+deploy/tencent        腾讯云部署配置和部署脚本
 docs/system           系统说明文档
 docs/deployment       部署说明文档
 ```
