@@ -463,6 +463,7 @@ function writeCurrentProjectId(projectId: string | null) {
 
 function hasPersistedTaskChanges(previous: Task, next: Task) {
   return previous.title !== next.title
+    || previous.description !== next.description
     || previous.status !== next.status
     || previous.priority !== next.priority
     || previous.plannedStart !== next.plannedStart
@@ -475,6 +476,7 @@ function toTaskUpdatePayload(task: Task) {
   return {
     id: task.id,
     title: task.title,
+    description: task.description,
     status: task.status,
     priority: task.priority,
     plannedStart: task.plannedStart,

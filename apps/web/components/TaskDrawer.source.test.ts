@@ -32,6 +32,14 @@ test('progress edits are buffered locally and committed on release or blur', () 
   assert.doesNotMatch(source, /onChange=\{\(e\) => updateTask\(task\.id, \{ progress: parseInt\(e\.target\.value\) \}\)\}/);
 });
 
+test('notes edits are buffered locally and committed on blur', () => {
+  assert.match(source, /notesDraft/);
+  assert.match(source, /setNotesDraft\(e\.target\.value\)/);
+  assert.match(source, /commitNotes/);
+  assert.match(source, /onBlur=\{commitNotes\}/);
+  assert.match(source, /description: notesDraft/);
+});
+
 test('error banner renders store error and dismiss action', () => {
   const errorBannerSource = readFileSync(resolve(dirnamePath, 'ErrorBanner.tsx'), 'utf8');
 

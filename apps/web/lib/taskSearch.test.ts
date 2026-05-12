@@ -8,9 +8,10 @@ import {
   taskMatchesSearch,
 } from './taskSearch';
 
-test('taskMatchesSearch searches display id, title, status, and dates', () => {
+test('taskMatchesSearch searches display id, title, notes, status, and dates', () => {
   const task = makeTask('whisper-017', 'Design verification package', {
     displayId: 'W-017',
+    description: 'Vendor signoff is blocked by security review',
     status: 'in_progress',
     plannedStart: '2026-03-10',
     plannedEnd: '2026-03-12',
@@ -18,6 +19,7 @@ test('taskMatchesSearch searches display id, title, status, and dates', () => {
 
   assert.equal(taskMatchesSearch(task, 'W-017'), true);
   assert.equal(taskMatchesSearch(task, 'verification'), true);
+  assert.equal(taskMatchesSearch(task, 'security review'), true);
   assert.equal(taskMatchesSearch(task, 'in progress'), true);
   assert.equal(taskMatchesSearch(task, '2026-03-12'), true);
   assert.equal(taskMatchesSearch(makeTask('cuid-task', 'Generated task', { displayId: 'T-014' }), 'T-014'), true);
@@ -55,6 +57,7 @@ function makeTask(id: string, title: string, overrides: Partial<Task> = {}): Tas
   return {
     id,
     title,
+    description: '',
     status: 'todo',
     priority: 'medium',
     plannedStart: '2026-03-01',

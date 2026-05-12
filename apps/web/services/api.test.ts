@@ -39,6 +39,7 @@ test('fetchTasks maps backend task responses into workspace tasks', async () => 
       {
         id: 'task-2',
         title: 'Integrated task',
+        description: '',
         status: 'in_progress',
         priority: 'high',
         plannedStart: '2026-05-08',

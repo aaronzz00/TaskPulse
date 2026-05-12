@@ -497,22 +497,22 @@ async function buildReport(
   dependencies: ReturnType<typeof buildDependencies>,
   missingDateFixes: MissingDateFix[],
 ) {
-  const dbRows = await prisma.$queryRawUnsafe<DbTaskDateRow[]>(
+  const dbRows = (await prisma.$queryRawUnsafe(
     `SELECT id, parentId, plannedStart, typeof(plannedStart) AS plannedStartType,
             plannedEnd, typeof(plannedEnd) AS plannedEndType
      FROM Task
      WHERE projectId = ?
      ORDER BY id`,
     PROJECT_ID,
-  );
-  const dbDependencies = await prisma.$queryRawUnsafe<DbDependencyRow[]>(
+  )) as DbTaskDateRow[];
+  const dbDependencies = (await prisma.$queryRawUnsafe(
     `SELECT d.sourceTaskId, d.targetTaskId, d.type, d.lag
      FROM Dependency d
      JOIN Task t ON t.id = d.targetTaskId
      WHERE t.projectId = ?
      ORDER BY d.sourceTaskId, d.targetTaskId, d.type, d.lag`,
     PROJECT_ID,
-  );
+  )) as DbDependencyRow[];
 
   return createImportReport({
     source,

@@ -290,7 +290,7 @@ function toCreateTaskPayload(task: Omit<WorkspaceTask, 'id'>, projectId: string)
     projectId,
     parentId: task.parentId,
     title: task.title,
-    description: '',
+    description: task.description ?? '',
     status: task.status,
     priority: task.priority,
     plannedStart: task.plannedStart,

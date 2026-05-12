@@ -6,6 +6,7 @@ import { formatShortDate } from '@/lib/dateLabels';
 import { calculateCriticalPath } from '@/lib/criticalPath';
 import { getTaskDisplayId } from '@/lib/taskDisplay';
 import { buildSearchExpansion, getSearchResults, taskMatchesSearch } from '@/lib/taskSearch';
+import { getDependencyLineStyle, getPriorityVisual } from '@/lib/taskVisuals';
 import {
   buildVisibleTaskList,
   clampTimelineScrollX,
@@ -357,6 +358,7 @@ export const Workspace: React.FC = () => {
         const startX = getXFromDate(task.plannedStart, timelineStartDate, dayWidth);
         const endX = getXFromDate(task.plannedEnd, timelineStartDate, dayWidth);
         const w = Math.max(endX - startX, 20); // min width
+        const priorityVisual = getPriorityVisual(task.priority);
 
         let bgColor = '#d1d5db';
         let progressColor = 'rgba(0,0,0,0.2)';
@@ -383,6 +385,11 @@ export const Workspace: React.FC = () => {
         ctx.fillStyle = bgColor;
         ctx.beginPath();
         ctx.roundRect(startX, y, w, 24, 12);
+        ctx.fill();
+
+        ctx.fillStyle = priorityVisual.ganttAccent;
+        ctx.beginPath();
+        ctx.roundRect(startX, y, Math.min(6, w), 24, 3);
         ctx.fill();
         
         ctx.shadowBlur = 0;
@@ -451,14 +458,21 @@ export const Workspace: React.FC = () => {
 
               const isCriticalDependency = Boolean(dep.id && criticalDependencyIds.has(dep.id));
               const isSelectedDependency = Boolean(selectedTaskId && (task.id === selectedTaskId || dep.taskId === selectedTaskId));
+              const lineStyle = getDependencyLineStyle({
+                isCritical: isCriticalDependency,
+                isSelected: isSelectedDependency,
+                type: dep.type,
+              });
               const direction = toX >= fromX ? 1 : -1;
               const elbowOffset = Math.max(18, Math.min(48, Math.abs(toX - fromX) / 2));
               const midX = fromX + direction * elbowOffset;
 
-              ctx.strokeStyle = isCriticalDependency ? '#dc2626' : isSelectedDependency ? '#4f46e5' : 'rgba(100, 116, 139, 0.35)';
-              ctx.fillStyle = ctx.strokeStyle;
-              ctx.lineWidth = isCriticalDependency || isSelectedDependency ? 2.5 : 1.25;
-              ctx.setLineDash(isCriticalDependency ? [] : [5, 4]);
+              ctx.save();
+              ctx.globalAlpha = lineStyle.alpha;
+              ctx.strokeStyle = lineStyle.strokeStyle;
+              ctx.fillStyle = lineStyle.strokeStyle;
+              ctx.lineWidth = lineStyle.lineWidth;
+              ctx.setLineDash(lineStyle.lineDash);
               ctx.beginPath();
               ctx.moveTo(fromX, fromY);
               ctx.lineTo(midX, fromY);
@@ -473,6 +487,7 @@ export const Workspace: React.FC = () => {
               ctx.lineTo(toX - direction * 7, toY + 4);
               ctx.closePath();
               ctx.fill();
+              ctx.restore();
             }
           });
         }
@@ -582,6 +597,7 @@ export const Workspace: React.FC = () => {
           {flatTasks.map((task, index) => {
             let borderColor = 'border-slate-300';
             let fillColor = 'bg-white';
+            const priorityVisual = getPriorityVisual(task.priority);
             
             if (task.status === 'done') {
               borderColor = 'border-green-500';
@@ -637,7 +653,7 @@ export const Workspace: React.FC = () => {
                     await useStore.getState().moveTask(draggingId, task.id, currentDropPosition);
                   }
                 }}
-                className={`group h-10 flex items-center border-b border-slate-50 hover:bg-slate-50 cursor-pointer relative ${task.status === 'in_progress' ? 'bg-blue-50/30' : ''} ${criticalTaskIds.has(task.id) ? 'bg-red-50/40' : ''} ${taskMatchesSearch(task, searchQuery) ? 'bg-amber-50/60' : ''} ${activeSearchTaskId === task.id ? 'ring-1 ring-inset ring-amber-400 bg-amber-100/70' : ''} ${dragOverId === task.id && dropPosition === 'inside' ? 'bg-indigo-50' : ''}`}
+                className={`group h-10 flex items-center border-b border-slate-50 hover:bg-slate-50 cursor-pointer relative before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 ${priorityVisual.rowAccentClass} ${task.status === 'in_progress' ? 'bg-blue-50/30' : ''} ${criticalTaskIds.has(task.id) ? 'bg-red-50/40' : ''} ${taskMatchesSearch(task, searchQuery) ? 'bg-amber-50/60' : ''} ${activeSearchTaskId === task.id ? 'ring-1 ring-inset ring-amber-400 bg-amber-100/70' : ''} ${dragOverId === task.id && dropPosition === 'inside' ? 'bg-indigo-50' : ''}`}
               >
                 {dragOverId === task.id && dropPosition === 'before' && <div className="absolute top-0 left-0 right-0 h-0.5 bg-indigo-500 z-10" />}
                 {dragOverId === task.id && dropPosition === 'after' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500 z-10" />}
@@ -672,6 +688,12 @@ export const Workspace: React.FC = () => {
                   <span className={`text-[13px] truncate font-medium ${task.priority === 'critical' || criticalTaskIds.has(task.id) ? 'text-slate-900' : 'text-slate-700'}`}>
                     {task.title} {(task.priority === 'critical' || criticalTaskIds.has(task.id)) && <span className="text-red-500 ml-1">●</span>}
                   </span>
+                  <span
+                    title={`${priorityVisual.label} priority`}
+                    className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${priorityVisual.badgeClass}`}
+                  >
+                    {priorityVisual.shortLabel}
+                  </span>
                 </div>
                 {/* Add Subtask action */}
                 <button 
@@ -680,6 +702,7 @@ export const Workspace: React.FC = () => {
                     const dates = getDefaultTaskDates(tasks, task);
                     useStore.getState().createTask({
                       title: 'New Subtask',
+                      description: '',
                       status: 'todo',
                       priority: 'medium',
                       plannedStart: dates.plannedStart,
@@ -726,6 +749,7 @@ export const Workspace: React.FC = () => {
                 const dates = getDefaultTaskDates(tasks);
                 useStore.getState().createTask({
                   title: 'New Task',
+                  description: '',
                   status: 'todo',
                   priority: 'medium',
                   plannedStart: dates.plannedStart,
@@ -777,6 +801,20 @@ export const Workspace: React.FC = () => {
               {mode}
             </button>
           ))}
+        </div>
+        <div className="absolute top-[5.6rem] right-4 z-20 flex items-center gap-3 rounded border border-slate-200 bg-white/95 px-2 py-1 text-[10px] text-slate-500 shadow-sm">
+          <span className="inline-flex items-center gap-1">
+            <i className="h-0.5 w-5 bg-red-600" />
+            Critical
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <i className="h-0.5 w-5 bg-indigo-600" />
+            Selected
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <i className="h-0 w-5 border-t-2 border-dashed border-slate-600" />
+            Normal
+          </span>
         </div>
         
         <canvas 

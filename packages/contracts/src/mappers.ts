@@ -30,6 +30,7 @@ export function mapBackendTaskToWorkspaceTask(task: BackendTask): WorkspaceTask 
     id: task.id,
     ...(task.displayId ? { displayId: task.displayId } : {}),
     title: task.title,
+    description: task.description ?? '',
     status: mapWorkspaceTaskStatus(task.status),
     priority: task.priority,
     plannedStart: toDateInputValue(task.plannedStart),

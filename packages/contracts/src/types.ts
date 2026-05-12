@@ -61,6 +61,7 @@ export interface WorkspaceTask {
   id: string;
   displayId?: string;
   title: string;
+  description: string;
   status: WorkspaceTaskStatus;
   priority: TaskPriority;
   plannedStart: string;

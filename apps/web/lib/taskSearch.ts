@@ -5,7 +5,7 @@ export function normalizeSearchQuery(query: string): string {
   return query.trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
 }
 
-export function taskMatchesSearch(task: Pick<Task, 'id' | 'displayId' | 'title' | 'status' | 'plannedStart' | 'plannedEnd'>, query: string): boolean {
+export function taskMatchesSearch(task: Pick<Task, 'id' | 'displayId' | 'title' | 'description' | 'status' | 'plannedStart' | 'plannedEnd'>, query: string): boolean {
   const normalizedQuery = normalizeSearchQuery(query);
   if (!normalizedQuery) return false;
 
@@ -14,6 +14,7 @@ export function taskMatchesSearch(task: Pick<Task, 'id' | 'displayId' | 'title' 
     task.displayId,
     getTaskDisplayId(task),
     task.title,
+    task.description,
     task.status.replace(/_/g, ' '),
     task.plannedStart,
     task.plannedEnd,

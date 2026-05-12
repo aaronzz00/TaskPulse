@@ -20,24 +20,34 @@ export const TaskDrawer: React.FC = () => {
   } = useStore();
   const task = tasks.find(t => t.id === selectedTaskId);
   const [titleDraft, setTitleDraft] = React.useState('');
+  const [notesDraft, setNotesDraft] = React.useState('');
   const [progressDraft, setProgressDraft] = React.useState(0);
   const [dependencySearch, setDependencySearch] = React.useState('');
   const lastTitleCommitRef = React.useRef('');
+  const lastNotesCommitRef = React.useRef('');
   const lastProgressCommitRef = React.useRef(0);
 
   React.useEffect(() => {
     setTitleDraft(task?.title ?? '');
+    setNotesDraft(task?.description ?? '');
     setProgressDraft(task?.progress ?? 0);
     lastTitleCommitRef.current = task?.title ?? '';
+    lastNotesCommitRef.current = task?.description ?? '';
     lastProgressCommitRef.current = task?.progress ?? 0;
     setDependencySearch('');
-  }, [task?.id, task?.title, task?.progress]);
+  }, [task?.id, task?.title, task?.description, task?.progress]);
 
   const commitTitle = React.useCallback(() => {
     if (!task || titleDraft === task.title || titleDraft === lastTitleCommitRef.current) return;
     lastTitleCommitRef.current = titleDraft;
     updateTask(task.id, { title: titleDraft });
   }, [task, titleDraft, updateTask]);
+
+  const commitNotes = React.useCallback(() => {
+    if (!task || notesDraft === (task.description ?? '') || notesDraft === lastNotesCommitRef.current) return;
+    lastNotesCommitRef.current = notesDraft;
+    updateTask(task.id, { description: notesDraft });
+  }, [notesDraft, task, updateTask]);
 
   const commitProgress = React.useCallback((value: number) => {
     if (!task || value === task.progress || value === lastProgressCommitRef.current) return;
@@ -108,6 +118,18 @@ export const TaskDrawer: React.FC = () => {
                     }
                   }}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Notes</label>
+                <textarea
+                  value={notesDraft}
+                  onChange={(e) => setNotesDraft(e.target.value)}
+                  onBlur={commitNotes}
+                  rows={5}
+                  placeholder="Add task notes, assumptions, risks, or handoff context"
+                  className="w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition-all focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
 
