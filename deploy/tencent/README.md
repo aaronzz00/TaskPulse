@@ -56,3 +56,51 @@ docker compose --env-file deploy/tencent/.env -f deploy/tencent/docker-compose.p
 ```
 
 Store backups outside the repository.
+
+## GitHub Actions SSH Auto-Deploy
+
+For the quickest production workflow, GitHub Actions can deploy to one Tencent Cloud CVM or Lighthouse server over SSH after every push to `main`.
+
+### One-Time Server Setup
+
+Install Docker and Docker Compose, then clone the repository:
+
+```bash
+git clone https://github.com/aaronzz00/TaskPulse.git /opt/taskpulse
+cd /opt/taskpulse
+cp deploy/tencent/env.example deploy/tencent/.env
+```
+
+Edit `deploy/tencent/.env` on the server. Keep this file on the server only.
+
+Run the first deployment manually:
+
+```bash
+bash deploy/tencent/deploy.sh
+```
+
+### GitHub Secrets
+
+Create a GitHub Environment named `production`, then add these secrets:
+
+```text
+TENCENT_HOST=your-server-public-ip-or-domain
+TENCENT_USER=ubuntu
+TENCENT_SSH_KEY=private SSH key with access to the server
+TENCENT_DEPLOY_PATH=/opt/taskpulse
+```
+
+The deployment key should be a dedicated SSH key. Add its public key to the server user's `~/.ssh/authorized_keys`.
+
+### Deployment Behavior
+
+`.github/workflows/deploy-tencent-ssh.yml` runs on every push to `main` and can also be started manually from GitHub Actions. It:
+
+1. Installs dependencies.
+2. Runs `pnpm test`.
+3. Runs `pnpm build`.
+4. SSHes to the Tencent server.
+5. Resets the server checkout to `origin/main`.
+6. Runs `deploy/tencent/deploy.sh`.
+
+The server checkout is treated as deployment output. Do not keep manual source edits in that directory.

@@ -1,0 +1,56 @@
+name: Deploy to Tencent CVM
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: tencent-production
+  cancel-in-progress: false
+
+jobs:
+  test-build-deploy:
+    name: Test, build, and deploy
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          install -m 600 /dev/null ~/.ssh/taskpulse_deploy_key
+          printf '%s\n' "${{ secrets.TENCENT_SSH_KEY }}" > ~/.ssh/taskpulse_deploy_key
+          ssh-keyscan -H "${{ secrets.TENCENT_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy on Tencent server
+        run: |
+          ssh -i ~/.ssh/taskpulse_deploy_key \
+            -o IdentitiesOnly=yes \
+            "${{ secrets.TENCENT_USER }}@${{ secrets.TENCENT_HOST }}" \
+            "cd '${{ secrets.TENCENT_DEPLOY_PATH }}' && \
+             git fetch origin main && \
+             git checkout main && \
+             git reset --hard origin/main && \
+             bash deploy/tencent/deploy.sh"
