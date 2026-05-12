@@ -17,3 +17,7 @@ coverage/
 apps/api/prisma/dev.db
 apps/api/prisma/dev.db-*
 Whisper_Schedule_*.xlsx
+
+# Graphify
+graphify-out/
+.graphify_*
