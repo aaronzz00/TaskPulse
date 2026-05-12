@@ -27,6 +27,35 @@
   - 后端获取数据采用分块骨架屏。
   - 增删改操作使用状态机的微交互表现（例如变更尚未到达服务端确认前，任务行文字为灰色/带有小 loading 图标）。
 
+### 3.3 依赖项连线可读性 (Dependency Line Readability)
+- **现状**：当前甘特图中 critical path 依赖使用红色高亮，选中任务相关依赖使用靛蓝色，其余依赖使用低透明度灰蓝虚线。非 critical 依赖在浅色网格和任务条背景上识别度不足，尤其在 `all` 模式下容易被网格线吞没。
+- **改善点**：建立明确的依赖连线视觉层级。
+  - Critical path：继续使用红色实线，保持最高优先级。
+  - Selected dependency：使用靛蓝色实线或半实线，线宽高于普通依赖。
+  - Normal dependency：改为更高对比度的中性蓝灰，降低透明度损失，避免与网格线颜色接近。
+  - Dependency type：可用不同 dash pattern 或箭头样式区分 `FS` / `SS` / `FF` / `SF`，但不要只依赖颜色。
+  - 在甘特图右上角依赖模式控制区旁增加小型 legend，解释 critical / selected / normal 的样式含义。
+
+### 3.4 任务 Priority 视觉区分 (Task Priority Visual Differentiation)
+- **现状**：目前只有 `critical` priority 或 critical path 任务有明显红点/描边；`low`、`medium`、`high` 在任务列表和甘特图上缺少可扫读差异。
+- **改善点**：为所有 priority 建立一致的视觉编码，并确保它和 status、critical path 不冲突。
+  - `low`：低饱和灰/绿，弱提示。
+  - `medium`：中性蓝灰，默认态。
+  - `high`：橙/琥珀强调。
+  - `critical`：红色强调。
+  - 任务列表中增加 priority badge 或左侧色条，不只在标题后追加红点。
+  - 甘特条可使用 priority 色作为左侧细条、顶部细线或外描边；任务 status 仍控制主体填充色，critical path 仍使用独立红色描边。
+  - 搜索、选中、拖拽和 critical path 高亮应优先级明确，避免多个背景色互相覆盖导致不可读。
+
+### 3.5 任务备注栏 (Task Notes Field)
+- **现状**：后端 Task 已有 `description` 字段，但当前前端 WorkspaceTask 类型和任务详情抽屉没有把它作为可编辑备注栏暴露给用户。
+- **改善点**：把 `description` 明确作为用户可编辑的备注栏。
+  - 在任务详情抽屉中增加 `Notes` 多行文本框，支持查看和编辑备注。
+  - 任务列表中可用备注图标或摘要提示任务存在备注，但不应挤占主任务名空间。
+  - 搜索应可匹配备注内容，便于用户用备注关键词查找任务。
+  - 创建任务和子任务时默认备注为空字符串。
+  - 日程版本快照、Excel 导入和 AI 上下文应继续保留 `description`，避免恢复版本或 AI 分析时丢失备注。
+
 ## 4. Phase 2 准备 (Feature Evolution)
 
 ### 4.1 Graph View (PERT图 / 网络图)
